@@ -1,6 +1,7 @@
 (ns rbm-clj.examples
   (:require [rbm-clj.core :as rbm]
-           ;; [clojure.core.matrix :as mtx]
+            [clojure.core.matrix :as mtx]
+            [clojure.math.numeric-tower :as math]
             [clojure.string]
             [clojure.java.io :as jio]
             [gloss.core :as gloss]
@@ -24,7 +25,9 @@
 
 ;; Some of the examples save data to disk.
 ;; Set :data-dir to an appropriate path for saving.
-(def rbm-params {:lr 0.001 :data-dir "/Users/Jell/Documents/RPG ML/rbm-clj/out"})
+(def rbm-params
+  {:lr 0.001
+   :data-dir "/Users/Jell/Documents/RPG ML/rbm-clj/out"})
 
 
 ;;(def local-default-rbm (rbm/merge-params rbm/default-rbm rbm-params))
@@ -248,6 +251,7 @@
 ;; Convert images:
 ;; mogrify -fill white -opaque none -black-threshold 40% -white-threshold 60% -format bmp -monochrome *.png
 
+(def sword-size 50)
 (def sword-folder "/Users/Jell/Documents/RPG ML/Swords_Small/")
 
 (defn read-pixels-at [n]
@@ -255,8 +259,6 @@
       imgz/load-image
       imgz/get-pixels
       seq))
-
-(read-pixels-at 1)
 
 (def sword-dataset
   (map read-pixels-at (range 1 88)))
@@ -267,13 +269,80 @@
   ([n-iters]
      (let [draw-nth 0
            sword-dataset (shuffle sword-dataset)
-           rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
+           rbm-def (rbm/merge-params
+                    (assoc rbm/default-rbm :n-hid 20)
+                    rbm-params)
            data-dir (:data-dir (:params rbm-def))
            [rbm trained-wts] (train-new-rbm rbm-def sword-dataset n-iters false)
            trained-rbm (assoc rbm :wts trained-wts)
            recon (rbm/rbm-get-recon trained-rbm (take 1 sword-dataset))
-           recon-img (vec-to-image 50 (first recon))]
+           recon-img (vec-to-image sword-size (first recon))]
        (rbm/save-rbm (rbm/rbm-put-new-weights rbm trained-wts)
                      data-dir (str "swords-after-" n-iters "-iters.edn"))
-       (draw-image (vec-to-image 50 (first sword-dataset)))
+       (draw-image (vec-to-image sword-size (first sword-dataset)))
        (draw-image recon-img (str "recon, after" n-iters " training iterations")))))
+
+(defn random-sword []
+  (take (math/expt sword-size 2) (repeatedly #(rand-int 2))))
+
+(defn doitagain
+  "load previous and do stuff"
+  ([n-iters]
+     (let [rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
+           data-dir (:data-dir (:params rbm-def))]
+       (let [loaded-rbm (rbm/load-rbm
+                         data-dir
+                         (str "swords-after-"
+                              n-iters "-iters.edn"))
+             recon (rbm/rbm-get-recon loaded-rbm [(random-sword)])
+             recon-img (vec-to-image sword-size (first recon))]
+         (draw-image recon-img (str "recon, after" n-iters " training iterations"))))))
+
+(defn rbm-v [n]
+  (let [rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
+        data-dir (:data-dir (:params rbm-def))]
+    (rbm/load-rbm
+     data-dir
+     (str "swords-after-"
+          n "-iters.edn"))))
+
+(def rbm20
+  (let [rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
+        data-dir (:data-dir (:params rbm-def))]
+    (rbm/load-rbm
+     data-dir
+     (str "swords-after-"
+          200 "-iters.edn"))))
+
+(def rbm200
+  (let [rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
+        data-dir (:data-dir (:params rbm-def))]
+    (rbm/load-rbm
+     data-dir
+     (str "swords-after-"
+          200 "-iters.edn"))))
+
+(def generator-cycle-sequence
+  [:down ; vis1-input
+   comp-mtx-sigmoid ; vis1
+   :out ; conj vis1 onto output vector
+   :up ; hid1-input
+   comp-mtx-sigmoid ; hid1
+   :out])
+
+(-> (rbm-v 500)
+    (rbm/rbm-run [(first sword-dataset)])
+    second
+    (mtx/reshape [50 50])
+    mtx/to-nested-vectors
+    draw-image)
+
+(defn apply-sigmoid [m]
+  (mtx/compute-matrix (mtx/shape m) (partial rbm/comp-mtx-sigmoid m)))
+
+(-> (mtx/mmul (mtx/matrix [(take 21 (repeatedly #(rand 1)))])
+              (mtx/transpose (:wts (rbm-v 500))))
+    ;; apply-sigmoid
+    (mtx/reshape [50 50])
+    mtx/to-nested-vectors
+    draw-image)
