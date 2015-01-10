@@ -8,6 +8,7 @@
                  [net.mikera/core.matrix "0.20.0"]
                  [net.mikera/vectorz-clj "0.20.0"]
                  ;; the following are necessary only for the examples
+                 [net.mikera/imagez "0.5.0"]
                  [incanter "1.5.4"]
                  [gloss "0.2.2"]
                  [quil "1.6.0"]])

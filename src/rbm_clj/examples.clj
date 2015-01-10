@@ -6,6 +6,7 @@
             [gloss.core :as gloss]
             [gloss.io]
             [quil.core :as quil]
+            [mikera.image.core :as imgz]
            ;; [quil.helpers.seqs :as quilhs]
            ;; [quil.helpers.calc :as quilhc]
            ;; [incanter.stats :as istats]
@@ -19,11 +20,11 @@
 ;; Set the path in test-file-name, below to point to this file.
 
 ;; Set the following to the appropriate path
-(def test-file-name "path_to_image_data/t10k-images.idx3-ubyte")
+(def test-file-name "/Users/Jell/Documents/RPG ML/rbm-clj/t10k-images-idx3-ubyte")
 
-;; Some of the examples save data to disk. 
+;; Some of the examples save data to disk.
 ;; Set :data-dir to an appropriate path for saving.
-(def rbm-params {:lr 0.001 :data-dir "path_to_output_directory"})
+(def rbm-params {:lr 0.001 :data-dir "/Users/Jell/Documents/RPG ML/rbm-clj/out"})
 
 
 ;;(def local-default-rbm (rbm/merge-params rbm/default-rbm rbm-params))
@@ -90,7 +91,7 @@
   [img-map starti N]
   (take N (drop starti (:images img-map))))
 
-(def sq-side 25)
+(def sq-side 5)
 
 (defn draw-point
   [x y]
@@ -153,7 +154,7 @@
            rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
            [rbm trained-wts-or-filename] (train-new-rbm rbm-def ds n-iters save-wts?)]
        [rbm trained-wts-or-filename])))
-           
+
 (defn continue-training-rbm
   [rbm-def wts-filename dataset n-iters]
   (let [data-dir (:data-dir (:params rbm-def))
@@ -196,7 +197,6 @@
        (let [loaded-rbm (rbm/load-rbm data-dir "temprbm_.edn")]
          (rbm/rbm-get-recon loaded-rbm (get-dataset (get-images test-file-name) 0 1))))))
 
-
 (defn example2
   "Train a new RBM, draw a digit image, and its reconstruction."
   ([] (example2 5 50))
@@ -228,5 +228,52 @@
            recon-img (vec-to-image (:n-cols img-map) (first recon) false)]
        (draw-image (get-image draw-nth img-map false))
        (draw-image recon-img (str "recon, after" n-iters " training iterations")))))
-       
+
 ;; --------------------------------------------
+
+(def example-img
+  (let [draw-nth 0
+        n-datums 50
+        img-map (get-images test-file-name)
+        ds (get-dataset img-map 0 n-datums)]
+    (get-image draw-nth img-map)))
+
+(def example-images
+  (let [draw-nth 0
+        n-datums 50
+        img-map (get-images test-file-name)
+        ds (get-dataset img-map 0 n-datums)]
+    ds))
+
+;; Convert images:
+;; mogrify -fill white -opaque none -black-threshold 40% -white-threshold 60% -format bmp -monochrome *.png
+
+(def sword-folder "/Users/Jell/Documents/RPG ML/Swords_Small/")
+
+(defn read-pixels-at [n]
+  (-> (str sword-folder "sword-" n ".bmp")
+      imgz/load-image
+      imgz/get-pixels
+      seq))
+
+(read-pixels-at 1)
+
+(def sword-dataset
+  (map read-pixels-at (range 1 88)))
+
+(defn doit
+  "Try something with swords"
+  ([] (doit 5))
+  ([n-iters]
+     (let [draw-nth 0
+           sword-dataset (shuffle sword-dataset)
+           rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
+           data-dir (:data-dir (:params rbm-def))
+           [rbm trained-wts] (train-new-rbm rbm-def sword-dataset n-iters false)
+           trained-rbm (assoc rbm :wts trained-wts)
+           recon (rbm/rbm-get-recon trained-rbm (take 1 sword-dataset))
+           recon-img (vec-to-image 50 (first recon))]
+       (rbm/save-rbm (rbm/rbm-put-new-weights rbm trained-wts)
+                     data-dir (str "swords-after-" n-iters "-iters.edn"))
+       (draw-image (vec-to-image 50 (first sword-dataset)))
+       (draw-image recon-img (str "recon, after" n-iters " training iterations")))))
