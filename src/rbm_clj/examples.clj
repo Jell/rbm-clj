@@ -116,8 +116,8 @@
 (defn setup [img]
   (quil/smooth)
   (quil/background 255)
-  (quil/stroke 5)
-  (quil/stroke-weight 1))
+  (quil/stroke 0)
+  (quil/stroke-weight 0))
 
 (defn draw-image
   ([img] (draw-image img "MNIST Digit"))
@@ -252,13 +252,22 @@
 ;; mogrify -fill white -opaque none -black-threshold 40% -white-threshold 60% -format bmp -monochrome *.png
 
 (def sword-size 50)
+(def hidden-units 80)
 (def sword-folder "/Users/Jell/Documents/RPG ML/Swords_Small/")
 
 (defn read-pixels-at [n]
   (-> (str sword-folder "sword-" n ".bmp")
       imgz/load-image
       imgz/get-pixels
-      seq))
+      seq
+      (->> (map #(/ (+ % 16777215)
+                    (* 2 16777215.0))))))
+
+(comment
+  (-> (str sword-folder "sword-" 1 ".bmp")
+      imgz/load-image
+      imgz/show)
+  (take 10 (read-pixels-at 1)))
 
 (def sword-dataset
   (map read-pixels-at (range 1 88)))
@@ -270,33 +279,17 @@
      (let [draw-nth 0
            sword-dataset (shuffle sword-dataset)
            rbm-def (rbm/merge-params
-                    (assoc rbm/default-rbm :n-hid 20)
+                    (assoc rbm/default-rbm :n-hid hidden-units)
                     rbm-params)
            data-dir (:data-dir (:params rbm-def))
            [rbm trained-wts] (train-new-rbm rbm-def sword-dataset n-iters false)
            trained-rbm (assoc rbm :wts trained-wts)
            recon (rbm/rbm-get-recon trained-rbm (take 1 sword-dataset))
-           recon-img (vec-to-image sword-size (first recon))]
+           recon-img (vec-to-image sword-size (first recon) false)]
        (rbm/save-rbm (rbm/rbm-put-new-weights rbm trained-wts)
                      data-dir (str "swords-after-" n-iters "-iters.edn"))
-       (draw-image (vec-to-image sword-size (first sword-dataset)))
+       (draw-image (vec-to-image sword-size (first sword-dataset) false))
        (draw-image recon-img (str "recon, after" n-iters " training iterations")))))
-
-(defn random-sword []
-  (take (math/expt sword-size 2) (repeatedly #(rand-int 2))))
-
-(defn doitagain
-  "load previous and do stuff"
-  ([n-iters]
-     (let [rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
-           data-dir (:data-dir (:params rbm-def))]
-       (let [loaded-rbm (rbm/load-rbm
-                         data-dir
-                         (str "swords-after-"
-                              n-iters "-iters.edn"))
-             recon (rbm/rbm-get-recon loaded-rbm [(random-sword)])
-             recon-img (vec-to-image sword-size (first recon))]
-         (draw-image recon-img (str "recon, after" n-iters " training iterations"))))))
 
 (defn rbm-v [n]
   (let [rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
@@ -306,43 +299,14 @@
      (str "swords-after-"
           n "-iters.edn"))))
 
-(def rbm20
-  (let [rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
-        data-dir (:data-dir (:params rbm-def))]
-    (rbm/load-rbm
-     data-dir
-     (str "swords-after-"
-          200 "-iters.edn"))))
-
-(def rbm200
-  (let [rbm-def (rbm/merge-params rbm/default-rbm rbm-params)
-        data-dir (:data-dir (:params rbm-def))]
-    (rbm/load-rbm
-     data-dir
-     (str "swords-after-"
-          200 "-iters.edn"))))
-
-(def generator-cycle-sequence
-  [:down ; vis1-input
-   comp-mtx-sigmoid ; vis1
-   :out ; conj vis1 onto output vector
-   :up ; hid1-input
-   comp-mtx-sigmoid ; hid1
-   :out])
-
-(-> (rbm-v 500)
-    (rbm/rbm-run [(first sword-dataset)])
-    second
-    (mtx/reshape [50 50])
-    mtx/to-nested-vectors
-    draw-image)
-
 (defn apply-sigmoid [m]
   (mtx/compute-matrix (mtx/shape m) (partial rbm/comp-mtx-sigmoid m)))
 
-(-> (mtx/mmul (mtx/matrix [(take 21 (repeatedly #(rand 1)))])
-              (mtx/transpose (:wts (rbm-v 500))))
-    ;; apply-sigmoid
-    (mtx/reshape [50 50])
-    mtx/to-nested-vectors
-    draw-image)
+(defn make-random [base]
+  (-> (mtx/mmul (mtx/matrix [(take (inc hidden-units)
+                                   (repeatedly rand))])
+                (mtx/transpose (:wts (rbm-v base))))
+      apply-sigmoid
+      (mtx/reshape [sword-size sword-size])
+      mtx/to-nested-vectors
+      draw-image))
